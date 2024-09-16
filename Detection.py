@@ -122,7 +122,7 @@ def process_face():
 
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 # เปรียบเทียบใบหน้าที่พบกับใบหน้าที่รู้จัก
-                matches = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.5)
+                matches = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.4)
                 if matches[0]:
                     # หากพบใบหน้าที่ตรงกัน ให้วาดกรอบสีแดงรอบใบหน้า
                     top *= 2
