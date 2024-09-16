@@ -138,7 +138,7 @@ def process_face():
                 timestamp = frame_count / fps
 
                 # บันทึกเฟรมที่ตรวจจับได้ลงในโฟลเดอร์ผลลัพธ์
-                result_frame_path = os.path.join(OUTPUT_FRAMES_FOLDER, f'result_frame_{frame_count}_{int(timestamp)}.jpg')
+                result_frame_path = os.path.join(OUTPUT_FRAMES_FOLDER, f'{image_name}_{frame_count}_{int(timestamp)}.jpg')
                 pil_image.save(result_frame_path)
                 logging.info(f"Saved detected face result to {result_frame_path}.")
                 

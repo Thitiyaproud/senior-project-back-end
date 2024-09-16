@@ -14,7 +14,7 @@ def check_video_fps(video_path):
     cap.release()
 
 # Path ไปยังไฟล์วิดีโอสำหรับทดสอบ
-video_path = r'D:\senior-project-1\back-end\video\videoplayback (1).mp4'
+video_path = r'E:\test_3m.mp4'
 
 # เรียกใช้งานฟังก์ชันตรวจสอบ FPS
 check_video_fps(video_path)
