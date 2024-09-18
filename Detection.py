@@ -1,4 +1,5 @@
 import logging
+import time  
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
@@ -35,21 +36,32 @@ clear_and_create_folder(UPLOAD_FOLDER)
 clear_and_create_folder(OUTPUT_FRAMES_FOLDER)
 
 # โหลดโมเดลทั้งสองสำหรับการตรวจจับแว่นและหมวก
-glasses_model_path = 'best (glasses160).onnx'
+glasses_model_path = 'best_glasses.onnx'
 hat_model_path = 'best (hat152).onnx'
 glasses_model = YOLO(glasses_model_path, task='detect')
 hat_model = YOLO(hat_model_path, task='detect')
 
-# Mapping class สำหรับ glasses model
+# Mapping class สำหรับ hat model เพื่อย่อชื่อหมวก
 glasses_class_map = {
-    "Clear Lens Glasses": "glasses",
-    "Sunglasses": "sunglasses",
+    "glasses": "G",
+    "sunglasses": "SG",
+}
+
+# Mapping class สำหรับ hat model เพื่อย่อชื่อหมวก
+hat_class_map = {
+    "Balaclava": "BL",
+    "Baseball cap": "BC",
+    "Beanie": "BE",
+    "Bucket Hat": "BH",
+    "Helmet": "HE"
 }
 
 @app.route('/result_face', methods=['POST'])
 def process_face():
     # ฟังก์ชันสำหรับประมวลผลการตรวจจับใบหน้า
     logging.info("Received request for face detection.")  # บันทึกการรับคำขอ
+    start_time = time.time()  # เริ่มจับเวลา
+
     if 'image' not in request.files or 'video' not in request.files:
         # ตรวจสอบว่ามีไฟล์ทั้งภาพและวิดีโอหรือไม่
         logging.error("Both image and video files are required.")
@@ -122,7 +134,7 @@ def process_face():
 
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 # เปรียบเทียบใบหน้าที่พบกับใบหน้าที่รู้จัก
-                matches = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.4)
+                matches = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.43)
                 if matches[0]:
                     # หากพบใบหน้าที่ตรงกัน ให้วาดกรอบสีแดงรอบใบหน้า
                     top *= 2
@@ -133,7 +145,7 @@ def process_face():
                     face_found = True
 
             if face_found:
-                
+
                 # กำหนดค่า timestamp
                 timestamp = frame_count / fps
 
@@ -141,7 +153,7 @@ def process_face():
                 result_frame_path = os.path.join(OUTPUT_FRAMES_FOLDER, f'{image_name}_{frame_count}_{int(timestamp)}.jpg')
                 pil_image.save(result_frame_path)
                 logging.info(f"Saved detected face result to {result_frame_path}.")
-                
+
                 detected_faces.append({
                     "url": f"http://localhost:5000/output_frames/{os.path.basename(result_frame_path)}",
                     "name": image_name,
@@ -151,6 +163,10 @@ def process_face():
         frame_count += 1
 
     video_capture.release()  # ปิดการจับภาพวิดีโอ
+
+    end_time = time.time()  # จบการจับเวลา
+    elapsed_time = end_time - start_time  # คำนวณเวลาที่ใช้
+    logging.info(f"Face detection processing completed in {elapsed_time:.2f} seconds.")  # แสดงเวลาประมวลผล
 
     if not detected_faces:
         # หากไม่พบใบหน้าใด ๆ ในวิดีโอ
@@ -164,29 +180,50 @@ def process_face():
 def process_glasses_video():
     # ฟังก์ชันสำหรับประมวลผลการตรวจจับแว่นในวิดีโอ
     logging.debug(f"Request Files: {request.files}")
+    start_time = time.time()  # เริ่มจับเวลา
 
     if 'video' not in request.files:
         # ตรวจสอบว่ามีไฟล์วิดีโอหรือไม่
         logging.error("Missing video file in the request")
         return jsonify({"error": "Missing video file in the request"}), 400
 
-    return process_video(request, glasses_model, glasses_class_map)  # เรียกใช้ฟังก์ชันสำหรับประมวลผลวิดีโอ
+    # เรียกใช้ฟังก์ชัน process_video โดยไม่ต้องใช้ class_map
+    response = process_video(request, glasses_model, class_map=None)  # แก้ไขโดยการตั้งค่า class_map เป็น None
+
+    end_time = time.time()  # จบการจับเวลา
+    elapsed_time = end_time - start_time  # คำนวณเวลาที่ใช้
+    logging.info(f"Glasses detection processing completed in {elapsed_time:.2f} seconds.")  # แสดงเวลาประมวลผล
+
+    return response
+
+def generate_detected_filename(hat_type, frame_count, timestamp):
+    # ย่อชื่อหมวกแล้วสร้างชื่อไฟล์
+    short_name = hat_class_map.get(hat_type, hat_type[:2].upper())  # ใช้ชื่อย่อหรือย่ออัตโนมัติหากไม่มีใน map
+    return f"{short_name}_frame_{int(timestamp)}.jpg"
 
 @app.route('/result_hats', methods=['POST'])
 def process_hats_video():
     # ฟังก์ชันสำหรับประมวลผลการตรวจจับหมวกในวิดีโอ
     logging.debug(f"Request Files: {request.files}")
+    start_time = time.time()  # เริ่มจับเวลา
 
     if 'video' not in request.files:
         # ตรวจสอบว่ามีไฟล์วิดีโอหรือไม่
         logging.error("Missing video file in the request")
         return jsonify({"error": "Missing video file in the request"}), 400
 
-    return process_video(request, hat_model)  # เรียกใช้ฟังก์ชันสำหรับประมวลผลวิดีโอ
+    response = process_video(request, hat_model)  # เรียกใช้ฟังก์ชันสำหรับประมวลผลวิดีโอ
+
+    end_time = time.time()  # จบการจับเวลา
+    elapsed_time = end_time - start_time  # คำนวณเวลาที่ใช้
+    logging.info(f"Hats detection processing completed in {elapsed_time:.2f} seconds.")  # แสดงเวลาประมวลผล
+
+    return response
 
 def process_video(request, model, class_map=None):
     # ฟังก์ชันสำหรับประมวลผลวิดีโอทั่วไป
     video = request.files['video']
+    start_time = time.time()  # เริ่มจับเวลา
 
     video_path = os.path.join(UPLOAD_FOLDER, video.filename)
     video.save(video_path)  # บันทึกวิดีโอ
@@ -213,12 +250,17 @@ def process_video(request, model, class_map=None):
         os.remove(video_path)
         logging.info(f"Removed temporary video file {video_path}")
 
+    end_time = time.time()  # จบการจับเวลา
+    elapsed_time = end_time - start_time  # คำนวณเวลาที่ใช้
+    logging.info(f"Video processing completed in {elapsed_time:.2f} seconds.")  # แสดงเวลาประมวลผล
+
     socketio.emit('processing_complete')  # ส่งสัญญาณไปยัง client เมื่อประมวลผลเสร็จ
 
     return jsonify({"status": "success", "images": results})  # ส่งผลลัพธ์การประมวลผลกลับ
 
 def test_video_processing(video_path, model, class_map=None):
     # ฟังก์ชันทดสอบการประมวลผลวิดีโอ
+    start_time = time.time()  # เริ่มจับเวลา
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         # ตรวจสอบว่าสามารถเปิดวิดีโอได้หรือไม่
@@ -241,24 +283,50 @@ def test_video_processing(video_path, model, class_map=None):
 
         if frame_count % detection_interval == 0:
             # ประมวลผลการตรวจจับในเฟรมที่กำหนด
-            results = model(frame, conf=0.3, iou=0.3)
+            results = model(frame, conf=0.5, iou=0.3)
+            G_count = 0
+            SG_count = 0
+            BL_count = 0
+            BC_count = 0
+            BE_count = 0
+            BH_count = 0
+            HE_count = 0
+
             if results is not None:
                 for r in results:
                     for box, conf, cls in zip(r.boxes.xyxy, r.boxes.conf, r.boxes.cls):
                         detected_class = model.names[int(cls)].lower()
 
-                        if conf < 0.3:
+                        if conf < 0.5:
                             continue
 
                         if class_map and detected_class not in class_map.values():
                             continue
 
+                        # นับจำนวนแว่นที่ตรวจจับได้
+                        if detected_class == "glasses":
+                            G_count += 1
+                        elif detected_class == "sunglasses":
+                            SG_count += 1
+
+                        # นับจำนวนหมวกที่ตรวจจับได้
+                        elif detected_class == "balaclava":
+                            BL_count += 1
+                        elif detected_class == "baseball cap":
+                            BC_count += 1
+                        elif detected_class == "beanie":
+                            BE_count += 1
+                        elif detected_class == "bucket hat":
+                            BH_count += 1
+                        elif detected_class == "helmet":
+                            HE_count += 1
+
                         x1, y1, x2, y2 = map(int, box)
                         timestamp = frame_count / fps  # คำนวณเวลาในวิดีโอ
 
-                        detected_filename = f"{detected_class}_frame_{int(timestamp)}.jpg"
+                        detected_filename = f"G{G_count}_SG{SG_count}_BL{BL_count}_BC{BC_count}_BE{BE_count}_BH{BH_count}_HE{HE_count}_frame_{int(timestamp)}.jpg"
                         detected_path = os.path.join(output_dir, detected_filename)
-                        
+
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 5)  # วาดกรอบสีแดงรอบใบหน้าที่ตรวจจับได้
                         cv2.imwrite(detected_path, frame)  # บันทึกเฟรมที่ตรวจจับได้
 
@@ -276,6 +344,11 @@ def test_video_processing(video_path, model, class_map=None):
         frame_count += 1
 
     cap.release()  # ปิดการจับภาพวิดีโอ
+
+    end_time = time.time()  # จบการจับเวลา
+    elapsed_time = end_time - start_time  # คำนวณเวลาที่ใช้
+    logging.info(f"Test video processing completed in {elapsed_time:.2f} seconds.")  # แสดงเวลาประมวลผล
+
     return results_list  # ส่งรายการผลลัพธ์กลับ
 
 @app.route('/output_frames/<filename>')
